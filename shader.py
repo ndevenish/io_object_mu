@@ -38,6 +38,20 @@ mainTex_block = (
     ("link", "mainTex", "Color", "mainMaterial", "Color"),
     ("settex", "mainTex", "texture", "mainTex"),
     ("link", "mainMaterial", "Color", "Output", "Color"),
+    
+    # Create cycles nodes
+    ("node", "mainTexCy", "ShaderNodeTexImage", (-68, 163)),
+    ("setimg", "mainTexCy", "image", "mainTex"),
+    ("node", "Diffuse BSDF", "ShaderNodeBsdfDiffuse", (507, 211)),
+    ("node", "Material Output", "ShaderNodeOutputMaterial", (1001, 155)),
+    ("link", "mainTexCy", "Color", "Diffuse BSDF", "Color"),
+    
+    # Add a mixer to later allow specularity without rewiring
+    ("node", "Mix Shader", "ShaderNodeMixShader", (761, 132)),
+    ("link", "Diffuse BSDF", "BSDF", "Mix Shader", 1),
+    ("link", "Mix Shader", "Shader", "Material Output", "Surface"),
+    ("setval", "Mix Shader", "inputs[0].default_value", 0.0),
+
 )
 
 specular_block = (
@@ -46,6 +60,14 @@ specular_block = (
     ("link", "specColor", "Color", "mainMaterial", "Spec"),
     ("set", "specColor", "color_ramp.elements[1].color", "specColor"),
     #FIXME shinines
+
+    # Wire in specularity nodes to the BSDF mixer
+    ("node", "Glossy BSDF", "ShaderNodeBsdfGlossy", (491, -37)),
+    ("node", "RGB to BW", "ShaderNodeRGBToBW", (189, 73)),
+    ("link", "Glossy BSDF", "BSDF", "Mix Shader", 2),
+    ("link", "RGB to BW", "Val", "Mix Shader", "Fac"),
+    ("link", "mainTexCy", "Color", "RGB to BW", "Color"),
+
 )
 
 bumpmap_block = (
@@ -56,6 +78,14 @@ bumpmap_block = (
     ("setval", "bumpMap", "material.texture_slots[0].texture_coords", 'UV'),
     ("setval", "bumpMap", "material.texture_slots[0].use_map_color_diffuse", False),
     ("setval", "bumpMap", "material.texture_slots[0].use_map_normal", True),
+
+    # Cycles bump data
+    ('node', 'Bump Texture', 'ShaderNodeTexImage', (-71.5, -56.9)),
+    ('node', 'Bump', 'ShaderNodeBump', (170.7, -65.48)),
+    ('link', 'Bump Texture', 'Color', 'Bump', 'Height'),
+    ('link', 'Bump', 'Normal', 'Diffuse BSDF', 'Normal'),
+    ('setval', 'Bump', 'invert', True),
+    ("setimg", "Bump Texture", "image", "bumpMap"),
 )
 
 emissive_block = (
@@ -158,6 +188,13 @@ def node_settex(name, matprops, nodes, s):
         tex = bpy.data.textures[tex.tex]
         exec ("n.%s = tex" % s[2], {}, locals())
 
+def node_setimg(name, matprops, nodes, s):
+    n = nodes["%s.%s" % (name, s[1])]
+    tex = getattr(matprops,s[3])
+    if tex.tex in bpy.data.images:
+        tex = bpy.data.images[tex.tex]
+        exec ("n.%s = tex" % s[2], {}, locals())
+
 def node_setval(name, nodes, s):
     n = nodes["%s.%s" % (name, s[1])]
     exec ("n.%s = %s" % (s[2], repr(s[3])), {}, locals())
@@ -184,6 +221,8 @@ def create_nodes(mat):
             node_set(mat.name, mat.mumatprop, nodes, s)
         elif s[0] == "settex":
             node_settex(mat.name, mat.mumatprop, nodes, s)
+        elif s[0] == "setimg":
+            node_setimg(mat.name, mat.mumatprop, nodes, s)
         elif s[0] == "setval":
             node_setval(mat.name, nodes, s)
         elif s[0] == "call":
